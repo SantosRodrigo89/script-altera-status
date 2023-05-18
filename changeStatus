@@ -1,0 +1,57 @@
+function duplicatedItems(requestIds) {
+    return new Set(requestIds).size !== requestIds.length;
+}
+
+const changeStatus = (base) => {
+    const requestIds = base.split("\n");
+    const bonuzConsumerProfiles = db.getSiblingDB("bonuzConsumer").getCollection("profiles");
+    const businessRequests = db.getSiblingDB("business").getCollection("requests");
+
+    let operations = [];
+
+    if (duplicatedItems(requestIds)) {
+        print("Alguma requestId duplicada no arquivo base. Favor remover.");
+    } else {
+        print("Nenhuma requestId duplicada no arquivo base. \n");
+        const countRequests = requestIds.length;
+        print(`Quantidade de requests para a migração:  ${countRequests}  \n`);
+        let countUpdate = 0;
+
+        requestIds.forEach((id) => {
+            const requestInDb = businessRequests.findOne({ '_id': ObjectId(id) });
+            if (!requestInDb) {
+                print(`A request ${requestInDb} não foi localizada no banco de dados`);
+            } else {
+                const profileContextId = requestInDb.data.idConsumer;
+                operations.push({
+                    updateOne: {
+                        filter: { profileContextId, 'status.name': { $in: ['canceled', 'suspended'] } },
+                        update: {
+                            '$set': {
+                                status: {
+                                    name: 'active',
+                                    timestamp: new Date()
+                                }
+                            }
+                        }
+                    }
+                })
+            }
+
+            countUpdate++;
+            //Executando o bulk de 1000 em 1000
+            if (operations.length >= 1000) {
+                bonuzConsumerProfiles.bulkWrite(operations, { 'ordered': false });
+                print('Profiles atualizadas: ' + countUpdate);
+                operations = [];
+            } else {
+                print(`Status da request ${id} é válido`)
+            }
+        });
+
+        if (operations.length > 0) {
+            bonuzConsumerProfiles.bulkWrite(operations, { 'ordered': false });
+            print('Profiles atualizadas:' + countUpdate);
+        }
+    }
+};
